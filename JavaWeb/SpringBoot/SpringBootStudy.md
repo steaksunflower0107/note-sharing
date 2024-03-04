@@ -2235,3 +2235,354 @@ ThreadLocal **会为每个线程单独开辟一块只有该线程能操作的内
 | `void remove()`                                              | 移除当前线程的 ThreadLocal 变量。这样做可以避免 ThreadLocal 变量的内存泄漏问题。 |
 | `protected T initialValue()`                                 | 在首次调用 `get()` 方法时，如果 ThreadLocal 变量还没有设置值，则会调用该方法来设置初始值。可以通过继承 ThreadLocal 并重写该方法来定义自定义的初始值。 |
 | `static <S> ThreadLocal<S> withInitial(Supplier<? extends S> supplier)` | 返回一个带有初始值供应商的新的 ThreadLocal 实例。初始值供应商是一个函数式接口，用于提供 ThreadLocal 变量的初始值。 |
+
+
+
+# HttpClient
+
+HttpClient是Apache Jakarta Common下的子项目，是提供高效、功能丰富的支持HTTP协议的客户端编程工具包，且支持HTTP协议最新的版本和建议
+
+maven坐标:
+
+```xml
+<dependency>
+    <groupId>org.apache.httpcomponents</groupId>
+    <artifactId>httpclient</artifactId>
+    <version>4.5.13</version>
+</dependency>
+```
+
+核心API:
+
+- HttpClient
+- HttpClients
+- CloseableHttpClient
+- HttpGet
+- HttpPost
+
+发送请求步骤:
+
+1. 创建HttpClient对象
+2. 创建Http请求对象
+3. 调用HttpClient的execute方法发送请求
+
+## Get
+
+```java
+public void testGet() throws IOException {
+    // 创建HttpClient对象
+    CloseableHttpClient httpClient = HttpClients.createDefault();
+    // 创建请求对象
+    HttpGet httpGet = new HttpGet("http://localhost:8080/user/shop/status");
+    // 发送请求
+    CloseableHttpResponse response = httpClient.execute(httpGet);
+
+    // 获取响应的状态码
+    int statusCode = response.getStatusLine().getStatusCode();
+    System.out.println("响应状态码 " + statusCode);
+
+    // 获取响应体
+    HttpEntity entity = response.getEntity();
+    String body = EntityUtils.toString(entity);
+    System.out.println("响应的数据是: " + body);
+
+    // 关闭资源
+    response.close();
+    httpClient.close();
+}
+```
+
+## POST
+
+```java
+public void testPost() throws IOException {
+    // 创建HttpClient对象
+    CloseableHttpClient httpClient = HttpClients.createDefault();
+    // 创建请求对象
+    HttpPost httpPost = new HttpPost("http://localhost:8080/admin/employee/login");
+
+    // 借助fastJSON构建请求体
+    JSONObject jsonObject = new JSONObject();
+    jsonObject.put("username", "admin");
+    jsonObject.put("password", "123456");
+
+    // 设置到要发送的请求体中
+    StringEntity entity = new StringEntity(jsonObject.toString());
+    // 指定请求编码方式
+    entity.setContentEncoding("utf-8");
+    // 数据格式
+    entity.setContentType("application/json");
+    httpPost.setEntity(entity);
+
+    // 发送请求
+    CloseableHttpResponse response = httpClient.execute(httpPost);
+    // 解析返回结果
+    int statusCode = response.getStatusLine().getStatusCode();
+    System.out.println("服务端响应码为: " + statusCode);
+
+    HttpEntity responseEntity = response.getEntity();
+    String body = EntityUtils.toString(responseEntity);
+    System.out.println("响应数据为: " + body);
+
+    // 关闭资源
+    response.close();
+    httpClient.close();
+}
+```
+
+# Spring Cache
+
+Spring Cache 是一个框架，实现了基于注解的缓存功能
+
+Spring Cache提供了一层抽象，底层可以切换不同的缓存实现，例如:
+
+- EHCache
+- Caffeine
+- Redis
+
+```java
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-cache</artifactId>
+</dependency>
+```
+
+| 注解             | 含义                                                         |
+| :--------------- | :----------------------------------------------------------- |
+| `@EnableCaching` | 启用Spring Cache功能，通常加在启动类上                       |
+| `@Cacheable`     | 通常加在方法上，会在方法执行前查询缓存中是否有数据，如果有直接返回，否则将调用方法并将方法的返回值加到缓存中 |
+| `@CacheEvict`    | 标记方法的结果(一或多)应该从缓存中移除                       |
+| `@CachePut`      | 标记方法的结果应该被缓存或更新缓存                           |
+
+## 常用注解
+
+- @CachePut
+
+  key的生成: 通过`cacheNames`属性和`key`属性可以根据 cacheNames::key的格式拼装生成key
+
+  其中，对于key往往会采用具有唯一标识作用的id，故可以使用spring EL中的`#+属性值`来动态获取形参列表中的值，但要求形参名和SEL中的名称一致
+
+  ``` java
+  @CachePut(cacheNames = "userCache", key = "#user.id")
+  public User save(@RequestBody User user) {
+      //
+  }
+  ```
+
+  该spring EL还可以使用关键字**result**，其相当于该方法的返回值，比如`#result.id`，该方式称为**对象导航**
+
+  还可以通过**px**方式获取方法的参数，比如如果想获取第一个参数的话，是`#p0.id`，还有**a0**或**root.args[0]**都是可行的
+
+  通过@CatchPut可以自动实现上述构造格式生成的key连同**方法的返回值作为value存入缓存**
+
+- @Cacheable
+
+  其key的构建方式和@CatchPut相同，但**不支持result关键字**，其封装了先查缓存 -> 有缓存直接返回 -> 无缓存查询数据库 -> 返回数据并将数据加入到缓存
+
+  ```java
+  @Cacheable(cacheNames = "userCache", key = "#id")
+  public User getById(Long id) {
+      // 如果在缓存中查询到数据，则会直接返回，否则会执行下述代码查询数据库
+      User user = userMapper.getById();
+      return user;
+  }
+  ```
+
+- @CacheEvict
+
+  其生成key的过程和上述两个注解相同，其会在**方法执行完之后**在缓存中删除给定的key
+
+  ```java
+  @CacheEvict(cacheNames = "userCache", key = "#id")
+  public void deleteById(Long id) {
+      userMapper.deleteById();
+  }
+  ```
+
+- 如果希望删除所有的缓存，可以将属性allEntries设置为true
+
+  ```java
+  @CacheEvict(cacheNames = "userCache", allEntries = true)
+  public void deleteAll() {
+      userMapper.deleteAll();
+  }
+  ```
+
+  
+
+# Spring Task
+
+Spring Task是spring提供的任务调度工具， 可以做一些定时任务
+
+使用步骤:
+
+1. 导入maven坐标(包含在了spring-context中)
+2. 启动类添加注解**@EnableScheduling**开启任务调度
+3. 自定义定时任务类，**并交给IOC容器管理**
+4. 编码定时任务方法，并用**@Scheduled**注解修饰，并配相应的cron表达式指定执行时间(频率)
+
+至此，定时任务会根据指定的执行时间定时执行
+
+```java
+@Component
+@Slf4j
+public class TaskTimer {
+    @Autowired
+    private OrderMapper orderMapper;
+
+    @Scheduled(cron = "0 * * * * ?") // 每分钟触发一次
+    public void processTimeOutOrder() {
+        log.info("定时处理超时订单");
+        List<Orders> ordersList = orderMapper.getByStatusAndOrderTime(Orders.PENDING_PAYMENT, LocalDateTime.now().plusMinutes(-15));
+
+        if (ordersList != null && ordersList.size() > 0) {
+            for (Orders orders : ordersList) {
+                orders.setStatus(Orders.CANCELLED);
+                orders.setCancelReason("订单超时，自动取消");
+                orders.setCancelTime(LocalDateTime.now());
+                orderMapper.update(orders);
+            }
+        }
+    }
+
+    @Scheduled(cron = "0 0 1 * * ?") // 每天凌晨一点触发
+    public void processDeliverOrder() {
+        log.info("定时处理处于派送中的订单");
+        List<Orders> ordersList = orderMapper.getByStatusAndOrderTime(Orders.DELIVERY_IN_PROGRESS, LocalDateTime.now().minusHours(1));
+
+        if (ordersList != null && ordersList.size() > 0) {
+            for (Orders orders : ordersList) {
+                orders.setStatus(Orders.COMPLETED);
+                orders.setCancelReason("订单超时，自动取消");
+                orders.setCancelTime(LocalDateTime.now());
+                orderMapper.update(orders);
+            }
+        }
+    }
+}
+```
+
+
+
+## cron表达式
+
+cron是一个字符串，通过cron表达式可以定义任务触发的时间点
+
+**cron由6-7个域构成，由空格分割开来，每个域代表一个含义**
+
+每个域的含义分别为: 秒、分钟、小时、日、月、周(星期几)、年(可选)
+
+例如 2023年7月11日上午9点: 0 0 9 11 7 ? 2023
+
+cron表达式在线生成器: https://cron.qqe2.com
+
+
+
+# WebSocket
+
+websocket是基于TCP协议的一种新型**网络协议**，其实现了游览器/客户端与服务的**全双工通信**，游览器和服务器只需完成一次握手，两者即可以创建**持久性**的连接，并进行双向数据传输
+
+一些典型应用场景:
+
+- 视频弹幕
+- 网页聊天
+- 体育比赛数据实况更新
+- 股票基金报价实时更新
+
+使用步骤
+
+1. 导入maven坐标
+
+   ```xml
+   <dependency>
+       <groupId>org.springframework.boot</groupId>
+       <artifactId>spring-boot-starter-websocket</artifactId>
+   </dependency>
+   ```
+
+2. 加入注册websocket组件的配置类
+
+   ```java
+   /**
+    * WebSocket配置类，用于注册WebSocket的Bean
+    */
+   @Configuration
+   public class WebSocketConfiguration {
+       @Bean
+       public ServerEndpointExporter serverEndpointExporter() {
+           return new ServerEndpointExporter();
+       }
+   }
+   ```
+
+3. 导入websocket服务端组件WebSocketServer用于与客户端通信
+
+例如:
+
+```java
+@Component
+@ServerEndpoint("/ws/{sid}")
+public class WebSocketServer {
+
+    //存放会话对象
+    private static Map<String, Session> sessionMap = new HashMap();
+
+    /**
+     * 连接建立成功调用的方法
+     */
+    @OnOpen
+    public void onOpen(Session session, @PathParam("sid") String sid) {
+        System.out.println("客户端：" + sid + "建立连接");
+        sessionMap.put(sid, session);
+    }
+
+    /**
+     * 收到客户端消息后调用的方法
+     *
+     * @param message 客户端发送过来的消息
+     */
+    @OnMessage
+    public void onMessage(String message, @PathParam("sid") String sid) {
+        System.out.println("收到来自客户端：" + sid + "的信息:" + message);
+    }
+
+    /**
+     * 连接关闭调用的方法
+     *
+     * @param sid
+     */
+    @OnClose
+    public void onClose(@PathParam("sid") String sid) {
+        System.out.println("连接断开:" + sid);
+        sessionMap.remove(sid);
+    }
+
+    /**
+     * 群发
+     *
+     * @param message
+     */
+    public void sendToAllClient(String message) {
+        Collection<Session> sessions = sessionMap.values();
+        for (Session session : sessions) {
+            try {
+                //服务器向客户端发送消息
+                session.getBasicRemote().sendText(message);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+}
+```
+
+其中使用**@ServerEndpoint()**注解指明请求路径与对应处理类的映射关系
+
+其中:
+
+- @OnOpen: 修饰在连接建立之初会自动执行的方法
+- @OnMessage: 修饰在收到客户端消息后会自动执行的方法
+- @OnClose: 当客户端和服务端之间断开链接之后自动执行的方法
+
+其中sendToAllClient()方法是**服务端向所有客户端发消息的处理方法**
+
